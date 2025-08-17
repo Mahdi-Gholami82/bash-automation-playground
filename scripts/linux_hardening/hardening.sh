@@ -2,7 +2,7 @@
 
 #config
 CREATE_NEW_USER=1
-USER_NAME="nig"
+USER_NAME="nick"
 CREATE_HOME_DIR=1
 USER_SHELL=$(which bash)
 
@@ -42,7 +42,7 @@ if ! apt update && apt upgrade; then
 	exit 1
 fi
 
-apt install -y vim wget curl network-manager fail2ban
+apt install -y vim wget curl network-manager fail2ban crudini
 
 
 #new user
@@ -61,7 +61,7 @@ usermod -aG sudo "$USER_NAME" || echo -e "\e[31mFailed to add new user to Sudo\e
 
 
 #sshd_config
-echo "Configuring sshd"
+echo "Configuring sshd..."
 SSHD_CONFIG="/etc/ssh/sshd_config"
 SSHD_CONFIG_OPTIONS="\
 PasswordAuthentication,no
@@ -78,13 +78,18 @@ for OPTION in $(echo "$SSHD_CONFIG_OPTIONS" | cut -d "," -f1); do
 	perl -0777 -pi -e "/\n$OPTION/
 			? s#(\n$OPTION)\s+.+#\1 $OPTION_VALUE#g
 			: s#\$#\n$OPTION $OPTION_VALUE#s" "$SSHD_CONFIG"
+	if [[ $? == 0 ]]; then
+		echo -e "change ($OPTION = $OPTION_VALUE) \e[32msuccess!\e[0m"
+	else
+		echo -e "change ($OPTION = $OPTION_VALUE) \e[31mfailure!\e[0m"	
+	fi	
 done
 systemctl restart sshd
 
 if [[ $? == 0 ]]; then
-        echo -e "\e[32mSuccessfully configured sshd\e[0m"
+        echo -e "\e[32msshd ready!\e[0m"
 else 
-	echo -e "\e[31mFailed to configure sshd\e[0m"
+	echo -e "\e[31msomething went wrong with restarting sshd you might need to do it manually.\e[0m"
 fi
 #firewall
 echo "setting up firewall"
@@ -101,6 +106,7 @@ yes "y" | ufw enable
 
 
 #fail2ban 
+echo "configuring fail2ban.."
 test -f /etc/fail2ban/fail2ban.local || cp /etc/fail2ban/fail2ban.conf /etc/fail2ban/fail2ban.local
 test -f /etc/fail2ban/jail.local || cp /etc/fail2ban/jail.conf /etc/fail2ban/jail.local 
 
@@ -111,9 +117,12 @@ maxretry,2"
 
 for OPTION in $(echo "$FAIL2BAN_CONFIG_OPTIONS" | cut -d "," -f1); do
 	OPTION_VALUE=$(echo "$FAIL2BAN_CONFIG_OPTIONS" | grep "$OPTION" | cut -d "," -f2)
-		perl -0777 -pi -e "/(?=\[sshd\].*?$OPTION\s*=)/s 
-  			? s#(\[sshd\].*?$OPTION\s*=\s*).+?(?=\n\[\w+\])#\1$OPTION_VALUE#s 
-  			: s#(\[sshd\])#\1\n$OPTION = $OPTION_VALUE#s" jail.local
+		crudini --set /etc/fail2ban/jail.local sshd "$OPTION" "$OPTION_VALUE":
+		if [[ $? == 0 ]]; then
+			echo -e "change ($OPTION = $OPTION_VALUE) \e[32msuccess!\e[0m"
+		else
+			echo -e "change ($OPTION = $OPTION_VALUE) \e[31mfailure!\e[0m"	
+		fi
 done
 
 
